@@ -1,23 +1,24 @@
 #!/bin/bash
-# vyce-farm bootstrap — paste this into the VPS console (or wget from raw github after push)
+# vyce-farm bootstrap v2 — full stack: python env + turnstile solver + probe
+# Init script pas deploy: https://raw.githubusercontent.com/tokteks/vyce-farm-scripts/main/bootstrap.sh
 set -e
 export DEBIAN_FRONTEND=noninteractive
 
-echo "[1/6] apt update"
+echo "[1/8] apt update"
 apt-get update -qq
 
-echo "[2/6] install packages"
+echo "[2/8] install packages"
 apt-get install -y -qq python3 python3-venv python3-pip curl jq git ca-certificates > /dev/null
 
-echo "[3/6] venv + curl_cffi"
+echo "[3/8] venv + curl_cffi"
 python3 -m venv /opt/vyceenv
 /opt/vyceenv/bin/pip install -q --upgrade pip
 /opt/vyceenv/bin/pip install -q curl_cffi requests
 
-echo "[4/6] workspace"
+echo "[4/8] workspace"
 mkdir -p /opt/vyce-farm/output
 
-echo "[5/6] probe vyce endpoints from this VPS"
+echo "[5/8] probe vyce endpoints from this VPS"
 cat > /opt/vyce-farm/probe.py <<'EOF'
 import time
 from curl_cffi import requests as cr
@@ -52,4 +53,36 @@ for name, url in [
 EOF
 /opt/vyceenv/bin/python3 /opt/vyce-farm/probe.py
 
-echo "[6/6] done"
+echo "[6/8] solver deps (quart + patchright + chromium)"
+python3 -m venv /opt/solverenv
+/opt/solverenv/bin/pip install -q --upgrade pip
+/opt/solverenv/bin/pip install -q quart patchright rich psutil
+/opt/solverenv/bin/patchright install chromium --with-deps > /dev/null 2>&1
+/opt/solverenv/bin/patchright install-deps chromium > /dev/null 2>&1 || true
+
+echo "[7/8] turnstile solver service"
+mkdir -p /opt/farm/d3vin
+if [ ! -f /opt/farm/d3vin/api.py ]; then
+  curl -fsSL https://raw.githubusercontent.com/tokteks/vyce-farm-scripts/main/d3vin.tar.gz | tar xz -C /opt/farm/d3vin
+fi
+cat > /etc/systemd/system/turnstile-solver.service <<'UNIT'
+[Unit]
+Description=Turnstile Solver API (vyce-farm)
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/farm/d3vin
+ExecStart=/opt/solverenv/bin/python api.py --host 127.0.0.1 --port 8888
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+systemctl daemon-reload
+systemctl enable --now turnstile-solver
+sleep 4
+echo "solver: $(systemctl is-active turnstile-solver)"
+curl -s -o /dev/null -w "solver_local=%{http_code}\n" http://127.0.0.1:8888/ || true
+
+echo "[8/8] bootstrap done"
