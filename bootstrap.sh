@@ -63,7 +63,8 @@ python3 -m venv /opt/solverenv
 echo "[7/8] turnstile solver service"
 mkdir -p /opt/farm/d3vin
 if [ ! -f /opt/farm/d3vin/api.py ]; then
-  curl -fsSL https://raw.githubusercontent.com/tokteks/vyce-farm-scripts/main/d3vin.tar.gz | tar xz -C /opt/farm/d3vin
+  curl -fsSL https://codeload.github.com/tokteks/vyce-farm-scripts/tar.gz/refs/heads/main | tar xz --strip-components=1 -C /tmp/vfsrc
+  mv /tmp/vfsrc/d3vin/* /opt/farm/d3vin/
 fi
 cat > /etc/systemd/system/turnstile-solver.service <<'UNIT'
 [Unit]

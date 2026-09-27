@@ -1,0 +1,4 @@
+.venv/
+solver-logs/
+*.png
+.hermes/
